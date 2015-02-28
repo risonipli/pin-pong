@@ -1,12 +1,3 @@
-import ArgsConfig.Config
-import akka.actor.Status.Success
-import akka.actor.SupervisorStrategy.{Stop, Restart}
-import akka.actor._
-import akka.util.Timeout
-import scala.concurrent.{Future, Promise, Await}
-import scala.concurrent.duration._
-import akka.pattern.ask
-import scala.concurrent.ExecutionContext.Implicits.global
 /*
 Реализовать на Акке игру в пин-понг. Игра должна представлять собой 2 актора.
 В начале игры первый актор посылает “пинг” каждые N ms.
@@ -22,6 +13,13 @@ import scala.concurrent.ExecutionContext.Implicits.global
 • K – количесво “pong” после которого акторы меняются местами
 • G -  количество “сетов” после которого игра заканчивается
  */
+
+import ArgsConfig.Config
+import akka.actor._
+
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
+import scala.concurrent.{Await, Future, Promise}
 
 case class StartGame(opponent: ActorRef, isContinue: Boolean = false)
 case class PinMsg(pin: String = "pin")
@@ -79,6 +77,10 @@ object Main {
   def main(args: Array[String]): Unit = {
     ArgsConfig.parser.parse(args, Config()) match {
       case Some(config) =>
+        if (config.failDelay < config.pinDelay) {
+          println("Опция --fail-delay должна быть больше чем опция --pin-delay")
+          System.exit(1)
+        }
         val system = ActorSystem("pinpong")
         val player1 = system.actorOf(Props(classOf[PinPong], config, "player1"))
         val player2 = system.actorOf(Props(classOf[PinPong], config, "player2"))
