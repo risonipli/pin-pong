@@ -15,7 +15,7 @@
  */
 
 import ArgsConfig.Config
-import akka.actor.SupervisorStrategy.{Resume, Restart}
+import akka.actor.SupervisorStrategy.Restart
 import akka.actor._
 import com.typesafe.config.ConfigFactory
 
@@ -25,12 +25,27 @@ import scala.concurrent.duration._
 case class StartGame(opponent: ActorRef, state: PlayerState)
 case class PinMsg(pin: String = "pin")
 case class PongMsg(pong: String = "pong")
-case class PlayerState(pongs: Int = 0, switchCounter: Int = 0)
+case class PlayerState(pins: Int = 0, pongs: Int = 0, switchs: Int = 0)
 case object BlowUp
 
 class PinPongSuperVisorStrategy extends SupervisorStrategyConfigurator {
   override def create(): SupervisorStrategy = OneForOneStrategy() {
-    case _: Exception => Resume
+    case _: Exception => Restart
+  }
+}
+
+object PinPong {
+  private val stateStorage = collection.mutable.Map[String, PlayerState]()
+
+  def saveState(path: String, state: PlayerState) =
+    if (!stateStorage.contains(path)) {
+      stateStorage(path) = state
+    } else throw new Exception("This state already stored")
+
+  def getState(path: String) = {
+    val state = stateStorage.getOrElse(path, PlayerState())
+    stateStorage.remove(path)
+    state
   }
 }
 
@@ -40,6 +55,15 @@ class PinPong(config: Config, name: String) extends Actor {
   var switchCounter = 0
   var pinSenderSch: Option[Cancellable] = None
   var blowUpSch: Option[Cancellable] = None
+
+  override def preRestart(reason: Throwable, message: Option[Any]): Unit = {
+    cancelBlowUp()
+    PinPong.saveState(self.path.toString, PlayerState(pinCounter))
+  }
+  override def postRestart(reason: Throwable): Unit = {
+    val state = PinPong.getState(self.path.toString)
+    pinCounter = state.pins
+  }
 
   def startPinSending(opponent: ActorRef) = {
     if (pinSenderSch.isEmpty)
@@ -67,15 +91,16 @@ class PinPong(config: Config, name: String) extends Actor {
 
   def receive = {
     case StartGame(opponent, state) =>
+      cancelBlowUp()
       pongCounter = state.pongs
-      switchCounter = state.switchCounter
+      switchCounter = state.switchs
       startPinSending(opponent)
 
     case PinMsg(pin) =>
       println(s"$name received: $pin")
       pinCounter += 1
       startBlowUp()
-      
+
       if (pinCounter % config.pinNumber == 0) {
         sender ! PongMsg()
       }
@@ -88,13 +113,15 @@ class PinPong(config: Config, name: String) extends Actor {
         cancelPinSending()
         if (switchCounter == config.set) this.context.system.shutdown()
         else {
-          pinSenderSch.map(s => s.cancel())
-          sender ! StartGame(self, PlayerState(pongCounter, switchCounter))
-          println("=========SWITCH===========")
+          cancelPinSending()
+          sender ! StartGame(self, PlayerState(
+            pongs = pongCounter, switchs = switchCounter))
+          println(s"=========SWITCH #$switchCounter===========")
         }
       }
 
-    case BlowUp => throw new Exception(s"Player $name blowed up with $pinCounter")
+    case BlowUp =>
+        throw new Exception(s"Player $name blowed up with $pinCounter pins")
   }
 }
 

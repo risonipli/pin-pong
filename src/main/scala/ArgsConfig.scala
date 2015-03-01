@@ -11,10 +11,10 @@ object ArgsConfig {
 
   case class Config(
     pinDelay: Int = 500,
-    failDelay: Int = 5000,
+    failDelay: Int = 1000,
     pinNumber: Int = 3,
-    switch: Int = 2,
-    set: Int = 2)
+    switch: Int = 3,
+    set: Int = 3)
 
   val parser = new scopt.OptionParser[Config]("pinpong") {
     head("pinpong", "0.0.1")
