@@ -19,34 +19,23 @@ import akka.actor._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
-import scala.concurrent.{Await, Future, Promise}
 
-case class StartGame(opponent: ActorRef, isContinue: Boolean = false)
+case class StartGame(opponent: ActorRef, state: PlayerState)
 case class PinMsg(pin: String = "pin")
 case class PongMsg(pong: String = "pong")
+case class PlayerState(pongs: Int = 0, switchCounter: Int = 0)
 
 class PinPong(config: Config, name: String) extends Actor {
-  def blowUp(): Unit = {
-      val deadline = config.failDelay millisecond fromNow
-      Future(Await.ready(Promise().future, deadline.timeLeft)) onComplete { _ =>
-        println("Bye, now.")
-        1 / 0
-        blowUp()
-      }
-  }
-
-//  if (failer) blowUp()
   var pinCounter = 0
   var pongCounter = 0
   var switchCounter = 0
   var scheduler: Option[Cancellable] = None
   def receive = {
-    case StartGame(opponent, isContinue) =>
-      if (isContinue) switchCounter += 1
-
+    case StartGame(opponent, state) =>
+      pongCounter = state.pongs
+      switchCounter = state.switchCounter
       scheduler = Some(this.context.system.scheduler.schedule(0.second, config.pinDelay.millisecond){
         opponent ! PinMsg()
-        pinCounter += 1
       })
 
     case PinMsg(pin) =>
@@ -55,7 +44,6 @@ class PinPong(config: Config, name: String) extends Actor {
 
       if (pinCounter % config.pinNumber == 0) {
         sender ! PongMsg()
-        pongCounter += 1
       }
 
     case PongMsg(pong) =>
@@ -66,7 +54,7 @@ class PinPong(config: Config, name: String) extends Actor {
         if (switchCounter == config.set) this.context.system.shutdown()
         else {
           scheduler.map(s => s.cancel())
-          sender ! StartGame(self, isContinue = true)
+          sender ! StartGame(self, PlayerState(pongCounter, switchCounter))
           println("=========SWITCH===========")
         }
       }
@@ -84,7 +72,8 @@ object Main {
         val system = ActorSystem("pinpong")
         val player1 = system.actorOf(Props(classOf[PinPong], config, "player1"))
         val player2 = system.actorOf(Props(classOf[PinPong], config, "player2"))
-        player1 ! StartGame(player2)
+
+        player1 ! StartGame(player2, PlayerState())
       case None =>
     }
   }
