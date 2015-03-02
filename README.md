@@ -35,7 +35,7 @@ Akka ping-pong game.
 
 Запуск с параметрами:
 
-> sbt "run Main [options]"
+> sbt "run-main Main [options]"
 
 Usage: pinpong [options]
 
